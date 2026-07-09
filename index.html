@@ -89,7 +89,11 @@
   .s-red{background:var(--s-red);color:var(--s-red)}
   .s-yellow{background:var(--s-yellow);color:var(--s-yellow)}
   .s-green{background:var(--s-green);color:var(--s-green)}
-  .lane-label .meta{min-width:0;display:flex;flex-direction:column;gap:3px}
+  .lane-label .meta{min-width:0;flex:1 1 auto;display:flex;flex-direction:column;gap:3px}
+  .lane-pipe{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line-strong);background:var(--surface);border-radius:7px;padding:4px 6px;color:var(--ink-soft);cursor:pointer;line-height:0}
+  .lane-pipe:hover{border-color:#aab4c4;color:var(--ink)}
+  .lane-pipe:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .lane-pipe .lp-count{font-size:10.5px;font-family:var(--mono);font-weight:600;line-height:1}
   .lane-label .nm{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;cursor:pointer}
   .lane-label .nm:hover{text-decoration:underline}
   .lane-label .nm:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
@@ -148,6 +152,12 @@
   .chk input{width:16px;height:16px;cursor:pointer}
   .sublabel2{font-size:11px;color:var(--ink-faint);margin-top:5px}
   .tasklist{display:flex;flex-direction:column;gap:6px}
+  .pipe-group{margin:0 0 14px}
+  .pipe-group:last-child{margin-bottom:0}
+  .pipe-head{font-size:11px;font-weight:650;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.02em;margin:0 0 6px}
+  .pipe-item{cursor:grab}
+  .pipe-item.dragging{opacity:.45;cursor:grabbing}
+  .pipe-item.drag-over{border-color:var(--focus);box-shadow:inset 0 3px 0 -1px var(--focus)}
   .task-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer;background:var(--surface,#fff)}
   .task-item:hover{border-color:var(--line-strong);background:var(--surface-2,var(--surface-2))}
   .task-item:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
@@ -224,6 +234,7 @@
       <button class="btn primary" id="btnNew">＋ Neue Aufgabe</button>
       <button class="btn" id="btnToday">Heute</button>
       <button class="btn" id="btnTeam">Team bearbeiten</button>
+      <button class="btn" id="btnPipeline">Pipeline</button>
       <span class="legend">
         <span class="lbl">Status je KW (Arbeitstage):</span>
         <span class="chip"><span class="sw" style="background:var(--s-red)"></span>0 frei</span>
@@ -249,6 +260,7 @@
 const DAY=86400000, STORAGE_KEY="hbe_planner_v1";
 const PALETTE=["#3f6fb5","#3f9d84","#c0873a","#9a5ba6","#c65d5d","#5c6f8a","#4a8f5b","#b07d3e"];
 const WD=["Mo","Di","Mi","Do","Fr","Sa","So"], MON=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+const PIPE_ICON='<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
 
 /* ---------- date helpers (whole UTC day-indices) ---------- */
 const di=(y,m,d)=>Math.floor(Date.UTC(y,m,d)/DAY);
@@ -264,6 +276,7 @@ function isoWeek(n){const t=dObj(n),date=new Date(Date.UTC(t.getUTCFullYear(),t.
   const ft=new Date(Date.UTC(date.getUTCFullYear(),0,4));const fdn=(ft.getUTCDay()+6)%7;ft.setUTCDate(ft.getUTCDate()-fdn+3);
   return 1+Math.round((date-ft)/(7*DAY));}
 function todayInfo(){const now=new Date(),today=di(now.getFullYear(),now.getMonth(),now.getDate());return{today,monToday:monOf(today)};}
+const MIN_START=di(2026,6,1);                          // frühestmöglicher Tag: 01.07.2026 (Monat 0-basiert → 6=Juli)
 const esc=s=>String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 
 /* ---------- state ---------- */
@@ -277,9 +290,11 @@ function migrate(s){
     t.days=Math.max(1,Math.round(t.days));
     if(t.load==null) t.load=100;
     delete t.series;                                  // altes Feld (durchgehende Serie) verwerfen
+    if(t.start===undefined) t.start=null;             // undatiert = Pipeline
     if(t.repeat!=="weekly") t.repeat="none";
     if(t.repeat==="weekly" && t.repeatUntil==null) t.repeatUntil=t.start;
     if(t.repeat!=="weekly") t.repeatUntil=null;
+    if(t.start==null){ t.repeat="none"; t.repeatUntil=null; }   // Pipeline-Aufgaben haben keine Wiederholung
   }
   for(const p of s.people){
     if(!Array.isArray(p.workdays)||p.workdays.length===0) p.workdays=[0,1,2,3,4];
@@ -355,6 +370,7 @@ function taskEnd(t){                                   // exklusives Ende des ge
   return t.start+t.days;
 }
 function taskCoversDay(t,d){                           // deckt ein Vorkommen den Tag d ab?
+  if(t.start==null) return false;                      // Pipeline-Aufgabe (kein Datum) deckt keinen Tag ab
   if(d<t.start) return false;
   if(isWeekly(t)){
     const k0=Math.floor((d-t.start)/7);
@@ -365,6 +381,7 @@ function taskCoversDay(t,d){                           // deckt ein Vorkommen de
 }
 function taskOccurrences(t,lo,hi){                     // Vorkommen-Spannen im Bereich [lo,hi)
   const out=[];
+  if(t.start==null) return out;                        // Pipeline-Aufgabe (kein Datum) -> keine Balken
   if(isWeekly(t)){
     let k=Math.max(0,Math.ceil((lo - t.days + 1 - t.start)/7));
     for(;;k++){ const s=t.start+7*k; if(s>t.repeatUntil||s>=hi) break; if(s+t.days>lo) out.push({start:s,days:t.days}); if(out.length>500) break; }
@@ -393,8 +410,9 @@ function fmtFree(f){ const v=Math.round(f*10)/10; return Number.isInteger(v)? St
 function computeRange(){
   const {today,monToday}=todayInfo();
   let start=monToday-7, end=start+14*7;
-  for(const t of state.tasks){ if(t.start<start)start=t.start; const e=taskEnd(t); if(e>end)end=e; }
+  for(const t of state.tasks){ if(t.start==null) continue; if(t.start<start)start=t.start; const e=taskEnd(t); if(e>end)end=e; }
   start-=dow(start); end+=4; const ed=dow(end); if(ed!==0) end+=(7-ed);
+  if(start<MIN_START) start=MIN_START;                // Kalender beginnt frühestens am 01.07.2026 (ggf. mit Teilwoche)
   return {start,end,today,days:end-start,weeks:(end-start)/7};
 }
 let RANGE=null;
@@ -438,13 +456,15 @@ function render(){
     while(i+c<days){const oo=dObj(start+i+c); if(oo.getUTCFullYear()!==y||oo.getUTCMonth()!==m)break; c++;}
     monthCells+=`<div class="h-month" style="flex:0 0 ${c*dw}px;width:${c*dw}px">${MON[m]} ${y}</div>`; i+=c; }
   let weekCells="";
-  for(let w=0;w<weeks;w++){ const kw=isoWeek(start+w*7);
-    weekCells+=`<div class="h-week" style="flex:0 0 ${7*dw}px;width:${7*dw}px">KW ${kw}</div>`; }
+  for(let d=start; d<start+days; ){                   // an echten Mo–So-Wochen ausrichten (erste Woche ggf. verkürzt)
+    const blk=Math.min(7-dow(d), start+days-d);
+    weekCells+=`<div class="h-week" style="flex:0 0 ${blk*dw}px;width:${blk*dw}px">KW ${isoWeek(d)}</div>`;
+    d+=blk; }
   let dayCells="";
   for(let d=0;d<days;d++){ const n=start+d, cls="h-day"+(isWeekend(n)?" weekend":"")+(n===today?" today":"");
     dayCells+=`<div class="${cls}" style="flex:0 0 ${dw}px;width:${dw}px"><span class="dow">${WD[dow(n)]}</span><span class="dom">${dObj(n).getUTCDate()}</span></div>`; }
 
-  const trackBg=buildTrackBg(dw);
+  const trackBg=buildTrackBg(dw,start);
   const {monToday}=todayInfo();
   hideTip();
   const items=[];
@@ -454,12 +474,14 @@ function render(){
   let lanes="";
   state.people.forEach((p,idx)=>{
     const cur=weekStatus(p.id,monToday), nxt=weekStatus(p.id,monToday+7);
+    const pcnt=state.tasks.filter(t=>t.start==null&&t.personId===p.id).length;
     const wkRow=(label,st)=>`<span class="wk">
         <span class="status s-${st.level}" role="img" aria-label="${label} KW ${st.kw}: ${STATUS_WORD[st.level]}" title="${label} (KW ${st.kw}) — ${STATUS_WORD[st.level]} · ${fmtFree(st.free)}/${st.work} frei"></span>
         <span class="wtxt">${label} KW ${st.kw}</span><span class="wfree">· ${fmtFree(st.free)}/${st.work} frei</span></span>`;
     lanes+=`<div class="lane" data-pid="${p.id}" data-idx="${idx}" style="height:${LAYOUT[idx].height}px">
       <div class="lane-label">
         <span class="meta"><span class="nm" role="button" tabindex="0" title="Aufgaben anzeigen">${esc(p.name)}</span>${wkRow("aktuelle",cur)}${wkRow("nächste",nxt)}</span>
+        <button class="lane-pipe" data-pid="${p.id}" title="Pipeline von ${esc(p.name)} (${pcnt})" aria-label="Pipeline von ${esc(p.name)}, ${pcnt} Aufgaben">${PIPE_ICON}<span class="lp-count">${pcnt}</span></button>
       </div>
       <div class="track" style="${trackBg}"></div>
     </div>`;
@@ -483,16 +505,20 @@ function render(){
     barsEl.appendChild(buildBar(it.t,idx,dw,start,it.start,it.days)); });
   if(state.people.length===0){ const e=document.createElement("div"); e.className="empty";
     e.innerHTML="Noch kein Team. Über „Team bearbeiten“ oben Personen hinzufügen."; barsEl.appendChild(e); }
-  else if(state.tasks.length===0){ const e=document.createElement("div"); e.className="empty";
-    e.innerHTML="Noch keine Aufgaben. Leg mit „＋ Neue Aufgabe“ los &nbsp;·&nbsp; oder zieh direkt in einer Zeile ein Zeitfenster auf."; barsEl.appendChild(e); }
+  else if(items.length===0){ const e=document.createElement("div"); e.className="empty";
+    e.innerHTML="Noch keine terminierten Aufgaben. Leg mit „＋ Neue Aufgabe“ los &nbsp;·&nbsp; zieh direkt in einer Zeile ein Zeitfenster auf &nbsp;·&nbsp; oder plane etwas aus der <b>Pipeline</b> ein."; barsEl.appendChild(e); }
 
   document.querySelectorAll(".lane").forEach(lane=>{
     lane.querySelector(".track").addEventListener("pointerdown",e=>startDraw(e,lane));
     const nm=lane.querySelector(".nm"), pid=lane.dataset.pid;
     if(nm){ nm.addEventListener("click",()=>openPersonTasks(pid));
       nm.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();openPersonTasks(pid);} }); }
+    const pipeBtn=lane.querySelector(".lane-pipe");
+    if(pipeBtn) pipeBtn.addEventListener("click",e=>{ e.stopPropagation(); openPipeline(pipeBtn.dataset.pid); });
   });
   setSync(syncState);                                 // Sync-Status nach Neuaufbau der Ecke wiederherstellen
+  const pipeCount=state.tasks.filter(t=>t.start==null).length;
+  const pbtn=document.getElementById("btnPipeline"); if(pbtn) pbtn.textContent = pipeCount ? `Pipeline (${pipeCount})` : "Pipeline";
   board.scrollLeft=keep.l; board.scrollTop=keep.t;
 }
 
@@ -500,12 +526,13 @@ function render(){
 let _resizeTimer=null;
 window.addEventListener("resize",()=>{ clearTimeout(_resizeTimer); _resizeTimer=setTimeout(()=>{ if(state) render(); },150); });
 
-function buildTrackBg(dw){
+function buildTrackBg(dw,rangeStart){
   const week=7*dw;
   const wknd=`repeating-linear-gradient(90deg,transparent 0,transparent ${5*dw}px,var(--weekend) ${5*dw}px,var(--weekend) ${week}px)`;
   const dayLines=`repeating-linear-gradient(90deg,var(--line) 0,var(--line) 1px,transparent 1px,transparent ${dw}px)`;
   const weekLines=`repeating-linear-gradient(90deg,var(--line-strong) 0,var(--line-strong) 1px,transparent 1px,transparent ${week}px)`;
-  return `background-image:${weekLines},${dayLines},${wknd};`;
+  const off=((7-dow(rangeStart||0))%7)*dw;            // Muster an echte Montage koppeln (falls Start kein Montag)
+  return `background-image:${weekLines},${dayLines},${wknd};background-position-x:${off}px;`;
 }
 function buildBar(t,idx,dw,rangeStart,occStart,occDays){
   const el=document.createElement("div"); el.className="bar"+(isWeekly(t)?" series":""); el.tabIndex=0;
@@ -631,14 +658,17 @@ function startDraw(e,lane){
 function removeTask(id){state.tasks=state.tasks.filter(t=>t.id!==id);render();scheduleSave();toast("Aufgabe gelöscht");}
 
 /* ---------- editor ---------- */
-function openEditor(task,prefill){
+function openEditor(task,prefill,returnTo){
   if(!state) return;
   if(!task && state.people.length===0){ toast("Bitte zuerst über „Team bearbeiten“ eine Person anlegen."); return; }
   const editing=!!task;
-  const t=editing?{...task}:{id:null,title:"",personId:(prefill?.personId)||state.people[0].id,start:(prefill?.start)??todayInfo().today,days:(prefill?.days)||1,note:"",load:100,repeat:"none",repeatUntil:null};
+  const defStart=Math.max(todayInfo().today, MIN_START);
+  const t=editing?{...task}:{id:null,title:"",personId:(prefill?.personId)||state.people[0].id,start:(prefill?.pipeline?null:((prefill?.start)??defStart)),days:(prefill?.days)||1,note:"",load:100,repeat:"none",repeatUntil:null};
   if(editing){ t.load=(t.load==null?100:t.load); t.repeat=(t.repeat==="weekly"?"weekly":"none"); }
+  const isPipe=t.start==null;                          // Pipeline = noch kein Datum
+  const startField=(t.start!=null)?Math.max(t.start,MIN_START):defStart;   // Vorbelegung fürs (ggf. ausgeblendete) Datumsfeld
   const isRep=t.repeat==="weekly";
-  const untilIso=idxToIso(isRep&&t.repeatUntil!=null?t.repeatUntil:(t.start+7*4));
+  const untilIso=idxToIso(isRep&&t.repeatUntil!=null?t.repeatUntil:(startField+7*4));
   const opts=state.people.map(p=>`<option value="${p.id}" ${p.id===t.personId?"selected":""}>${esc(p.name)}</option>`).join("");
   const root=document.getElementById("modalRoot");
   root.innerHTML=`
@@ -647,17 +677,18 @@ function openEditor(task,prefill){
       <div class="mbody">
         <div class="field"><label for="f-title">Thema</label><input id="f-title" type="text" placeholder="z. B. S/4HANA Migration Kunde A" value="${esc(t.title)}" /></div>
         <div class="field"><label for="f-person">Person</label><select id="f-person">${opts}</select></div>
+        <div class="field"><label class="chk" style="padding-top:0"><input type="checkbox" id="f-pipe" ${isPipe?"checked":""} /> In die Pipeline – noch kein Datum</label></div>
         <div class="row2">
-          <div class="field"><label for="f-start">Start</label><input id="f-start" type="date" value="${idxToIso(t.start)}" /></div>
+          <div class="field ${isPipe?"hidden":""}" id="f-start-wrap"><label for="f-start">Start</label><input id="f-start" type="date" min="${idxToIso(MIN_START)}" value="${idxToIso(startField)}" /></div>
           <div class="field"><label for="f-load">Auslastung (%)</label><input id="f-load" type="number" min="5" max="100" step="5" value="${t.load}" /></div>
         </div>
         <div class="row2">
           <div class="field"><label for="f-days">Dauer (Tage)</label><input id="f-days" type="number" min="1" step="1" value="${t.days}" /></div>
-          <div class="field"><label>Wiederholung</label>
+          <div class="field ${isPipe?"hidden":""}" id="f-rep-wrap"><label>Wiederholung</label>
             <label class="chk"><input type="checkbox" id="f-rep" ${isRep?"checked":""} /> wöchentlich wiederholen</label>
           </div>
         </div>
-        <div class="field ${isRep?"":"hidden"}" id="f-until-wrap">
+        <div class="field ${(isRep&&!isPipe)?"":"hidden"}" id="f-until-wrap">
           <label for="f-until">Wiederholen bis</label>
           <input id="f-until" type="date" value="${untilIso}" />
           <div class="sublabel2">wiederholt sich jede Woche am selben Wochentag bis zu diesem Datum</div>
@@ -667,28 +698,38 @@ function openEditor(task,prefill){
       <div class="mfoot">${editing?`<button class="link-danger" id="f-del">Löschen</button>`:""}<span class="sp"></span>
         <button class="btn" id="f-cancel">Abbrechen</button><button class="btn primary" id="f-save">${editing?"Speichern":"Anlegen"}</button></div>
    </div></div>`;
-  const close=()=>{root.innerHTML="";};
+  const onEsc=e=>{ if(e.key==="Escape") close(); };
+  const close=()=>{ document.removeEventListener("keydown",onEsc); root.innerHTML=""; if(typeof returnTo==="function") returnTo(); };
+  const syncPipe=()=>{
+    const pipe=document.getElementById("f-pipe").checked;
+    document.getElementById("f-start-wrap").classList.toggle("hidden",pipe);
+    document.getElementById("f-rep-wrap").classList.toggle("hidden",pipe);
+    document.getElementById("f-until-wrap").classList.toggle("hidden", pipe || !document.getElementById("f-rep").checked);
+  };
   document.getElementById("f-title").focus();
   document.getElementById("scrim").addEventListener("pointerdown",e=>{if(e.target.id==="scrim")close();});
   document.getElementById("f-cancel").onclick=close;
-  document.getElementById("f-rep").addEventListener("change",e=>{
-    document.getElementById("f-until-wrap").classList.toggle("hidden",!e.target.checked);
-  });
+  document.getElementById("f-pipe").addEventListener("change",syncPipe);
+  document.getElementById("f-rep").addEventListener("change",syncPipe);
   if(editing) document.getElementById("f-del").onclick=()=>{removeTask(task.id);close();};
   document.getElementById("f-save").onclick=()=>{
     const title=document.getElementById("f-title").value.trim()||"(ohne Titel)";
     const personId=document.getElementById("f-person").value;
-    const start=isoToIdx(document.getElementById("f-start").value);
+    const pipe=document.getElementById("f-pipe").checked;
     const load=Math.max(5,Math.min(100,parseInt(document.getElementById("f-load").value||"100",10)));
     const days=Math.max(1,parseInt(document.getElementById("f-days").value||"1",10));
-    let repeat="none", repeatUntil=null;
-    if(document.getElementById("f-rep").checked){ repeat="weekly"; repeatUntil=isoToIdx(document.getElementById("f-until").value); if(!(repeatUntil>=start)) repeatUntil=start; }
+    let start=null, repeat="none", repeatUntil=null;
+    if(!pipe){
+      start=isoToIdx(document.getElementById("f-start").value);
+      if(!(start>=MIN_START)){ toast("Startdatum darf nicht vor dem "+fmtDE(MIN_START)+" liegen."); return; }
+      if(document.getElementById("f-rep").checked){ repeat="weekly"; repeatUntil=isoToIdx(document.getElementById("f-until").value); if(!(repeatUntil>=start)) repeatUntil=start; }
+    }
     const note=document.getElementById("f-note").value;
     if(editing) Object.assign(state.tasks.find(x=>x.id===task.id),{title,personId,start,days,note,load,repeat,repeatUntil});
     else state.tasks.push({id:uid(),title,personId,start,days,note,load,repeat,repeatUntil});
-    close();render();scheduleSave();toast(editing?"Gespeichert":"Aufgabe angelegt");
+    render();scheduleSave();toast(editing?"Gespeichert":(pipe?"In die Pipeline gelegt":"Aufgabe angelegt"));close();
   };
-  root._esc=e=>{if(e.key==="Escape")close();}; document.addEventListener("keydown",root._esc,{once:true});
+  document.addEventListener("keydown",onEsc);
 }
 
 /* ---------- Aufgabenliste je Person ---------- */
@@ -696,11 +737,13 @@ function openPersonTasks(pid){
   if(!state) return;
   const person=state.people.find(p=>p.id===pid); if(!person)return;
   const tasks=state.tasks.filter(t=>t.personId===pid).slice()
-    .sort((a,b)=> a.start-b.start || a.title.localeCompare(b.title));
+    .sort((a,b)=> (a.start==null?1:0)-(b.start==null?1:0) || (a.start-b.start) || a.title.localeCompare(b.title));
   const rowHtml=t=>{
-    const meta = isWeekly(t)
-      ? `ab ${fmtDE(t.start)} · ⟳ wöchentlich bis ${fmtDE(t.repeatUntil)} · ${t.days} Tag${t.days===1?"":"e"}`
-      : `${fmtDE(t.start)}–${fmtDE(t.start+t.days-1)} · ${t.days} Tag${t.days===1?"":"e"}`;
+    const meta = t.start==null
+      ? `Pipeline · ${t.days} Tag${t.days===1?"":"e"} · kein Datum`
+      : isWeekly(t)
+        ? `ab ${fmtDE(t.start)} · ⟳ wöchentlich bis ${fmtDE(t.repeatUntil)} · ${t.days} Tag${t.days===1?"":"e"}`
+        : `${fmtDE(t.start)}–${fmtDE(t.start+t.days-1)} · ${t.days} Tag${t.days===1?"":"e"}`;
     return `<div class="task-item" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.title)} bearbeiten">
       <div class="ti-main"><div class="ti-title">${esc(t.title)}</div><div class="ti-meta">${meta}</div></div>
       <div class="ti-load">${taskLoad(t)} %</div></div>`;
@@ -725,6 +768,92 @@ function openPersonTasks(pid){
     row.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();openIt();} });
   });
   root._esc=e=>{if(e.key==="Escape")close();}; document.addEventListener("keydown",root._esc,{once:true});
+}
+
+/* ---------- Pipeline: anstehende Aufgaben ohne Datum ----------
+   Ohne pid: alle, gruppiert je Person. Mit pid: nur diese Person.
+   Reihenfolge je Person per ▲▼ änderbar; Popup bleibt nach Aktionen offen. */
+function openPipeline(pid){
+  if(!state) return;
+  const person = pid ? state.people.find(p=>p.id===pid) : null;
+  if(pid && !person) return;
+  const pipe=state.tasks.filter(t=>t.start==null && (!pid || t.personId===pid));
+  const move=(id,dir)=>{                               // dir: -1 hoch, +1 runter (innerhalb der Person)
+    const t=state.tasks.find(x=>x.id===id); if(!t) return;
+    const sib=[]; state.tasks.forEach((x,i)=>{ if(x.start==null && x.personId===t.personId) sib.push(i); });
+    const pos=sib.findIndex(i=>state.tasks[i].id===id), tgt=pos+dir;
+    if(tgt<0||tgt>=sib.length) return;
+    const a=sib[pos], b=sib[tgt], tmp=state.tasks[a]; state.tasks[a]=state.tasks[b]; state.tasks[b]=tmp;
+    render(); scheduleSave(); openPipeline(pid);        // Ansicht mit neuer Reihenfolge neu aufbauen
+  };
+  const rowHtml=(t,i,n)=>`<div class="task-item pipe-item" draggable="true" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.title)} bearbeiten">
+      <div class="ord">
+        <button class="ordb" data-move="up" data-id="${t.id}" ${i===0?"disabled":""} title="nach oben" aria-label="nach oben">▲</button>
+        <button class="ordb" data-move="down" data-id="${t.id}" ${i===n-1?"disabled":""} title="nach unten" aria-label="nach unten">▼</button>
+      </div>
+      <div class="ti-main"><div class="ti-title">${esc(t.title)}</div><div class="ti-meta">${t.days} Tag${t.days===1?"":"e"} · kein Datum</div></div>
+      <div class="ti-load">${taskLoad(t)} %</div></div>`;
+  let body;
+  if(!pipe.length){
+    body=`<div class="task-empty">${pid?`Für ${esc(person.name)} sind`:"Es sind"} keine anstehenden Aufgaben ohne Datum vorhanden. Über „${pid?"＋ Aufgabe":"＋ Aufgabe in Pipeline"}“ eine anlegen – ein Datum kannst du später jederzeit setzen.</div>`;
+  }else if(pid){
+    body=`<div class="tasklist">${pipe.map((t,i)=>rowHtml(t,i,pipe.length)).join("")}</div>`;
+  }else{
+    const known=new Set(state.people.map(p=>p.id));
+    const groups=state.people.map(p=>({name:p.name, items:pipe.filter(t=>t.personId===p.id)})).filter(g=>g.items.length);
+    const orphan=pipe.filter(t=>!known.has(t.personId));
+    if(orphan.length) groups.push({name:"Ohne Person", items:orphan});
+    body=groups.map(g=>`<div class="pipe-group"><div class="pipe-head">${esc(g.name)} · ${g.items.length}</div><div class="tasklist">${g.items.map((t,i)=>rowHtml(t,i,g.items.length)).join("")}</div></div>`).join("");
+  }
+  const title = pid ? `Pipeline – ${esc(person.name)}` : "Pipeline – anstehende Aufgaben ohne Datum";
+  const addLabel = pid ? `＋ Aufgabe für ${esc(person.name)}` : "＋ Aufgabe in Pipeline";
+  const root=document.getElementById("modalRoot");
+  root.innerHTML=`
+   <div class="scrim" id="scrim"><div class="modal" role="dialog" aria-modal="true" aria-label="Pipeline">
+      <h2>${title}</h2>
+      <div class="mbody">${body}</div>
+      <div class="mfoot"><button class="btn" id="pl-add">${addLabel}</button><span class="sp"></span><button class="btn primary" id="pl-close">Schließen</button></div>
+   </div></div>`;
+  const onEsc=e=>{ if(e.key==="Escape") close(); };
+  const close=()=>{ document.removeEventListener("keydown",onEsc); root.innerHTML=""; };
+  document.getElementById("scrim").addEventListener("pointerdown",e=>{if(e.target.id==="scrim")close();});
+  document.getElementById("pl-close").onclick=close;
+  document.getElementById("pl-add").onclick=()=> openEditor(null,{pipeline:true,personId:pid}, ()=>openPipeline(pid));
+  root.querySelectorAll(".pipe-item").forEach(row=>{
+    const openIt=()=>{ const task=state.tasks.find(x=>x.id===row.dataset.id); if(task) openEditor(task,null,()=>openPipeline(pid)); };
+    row.addEventListener("click",e=>{ if(e.target.closest(".ordb")) return; openIt(); });
+    row.addEventListener("keydown",e=>{ if((e.key==="Enter"||e.key===" ")&&!e.target.closest(".ordb")){e.preventDefault();openIt();} });
+  });
+  root.querySelectorAll(".ordb[data-move]").forEach(b=>{
+    b.addEventListener("click",e=>{ e.stopPropagation(); move(b.dataset.id, b.dataset.move==="up"?-1:1); });
+  });
+  // Drag & Drop: Reihenfolge innerhalb einer Person ändern
+  const reorder=(dragId,targetId)=>{
+    const dt=state.tasks.find(t=>t.id===dragId), tt=state.tasks.find(t=>t.id===targetId);
+    if(!dt||!tt||dt===tt||dt.start!=null||tt.start!=null||dt.personId!==tt.personId) return false;
+    state.tasks.splice(state.tasks.indexOf(dt),1);
+    state.tasks.splice(state.tasks.indexOf(tt),0,dt);   // vor das Ziel einsortieren
+    return true;
+  };
+  let dragId=null;
+  const clearDragOver=()=>root.querySelectorAll(".pipe-item.drag-over").forEach(r=>r.classList.remove("drag-over"));
+  root.querySelectorAll(".pipe-item").forEach(row=>{
+    row.addEventListener("dragstart",e=>{ dragId=row.dataset.id; row.classList.add("dragging");
+      if(e.dataTransfer){ e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",dragId);}catch(_){}} });
+    row.addEventListener("dragend",()=>{ row.classList.remove("dragging"); clearDragOver(); dragId=null; });
+    row.addEventListener("dragover",e=>{
+      const id=dragId; if(!id||id===row.dataset.id) return;
+      const dt=state.tasks.find(t=>t.id===id), tt=state.tasks.find(t=>t.id===row.dataset.id);
+      if(!dt||!tt||dt.personId!==tt.personId) return;   // nur innerhalb derselben Person
+      e.preventDefault(); if(e.dataTransfer) e.dataTransfer.dropEffect="move";
+      clearDragOver(); row.classList.add("drag-over"); });
+    row.addEventListener("drop",e=>{
+      e.preventDefault();
+      const id=dragId||(e.dataTransfer&&e.dataTransfer.getData("text/plain"));
+      clearDragOver();
+      if(reorder(id,row.dataset.id)){ render(); scheduleSave(); openPipeline(pid); } });
+  });
+  document.addEventListener("keydown",onEsc);
 }
 
 /* ---------- team ---------- */
@@ -785,6 +914,7 @@ document.getElementById("board").addEventListener("wheel",e=>{ if(e.shiftKey)ret
 document.getElementById("btnNew").onclick=()=>openEditor(null);
 document.getElementById("btnToday").onclick=jumpToday;
 document.getElementById("btnTeam").onclick=openTeam;
+document.getElementById("btnPipeline").onclick=()=>openPipeline();
 window.addEventListener("resize",()=>render());
 
 /* ---------- Teams-Integration ---------- */
