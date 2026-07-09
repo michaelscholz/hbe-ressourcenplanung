@@ -17,7 +17,7 @@
     --bar-bg:rgba(74,90,118,.11); --bar-bd:rgba(74,90,118,.34); --bar-accent:#4a5a76;
     --s-red:#d64545; --s-yellow:#e0a020; --s-green:#3f9d5f;
     --bg:#eceff4; --surface:#ffffff; --surface-2:#fbfcfe; --row-alt:#fcfdfe;
-    --dayW:40px; --laneW:244px; --rowH:76px;
+    --dayW:56px; --laneW:244px; --rowH:76px;
     --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
   }
@@ -38,9 +38,12 @@
   .tb-title{font-size:16px;font-weight:650;letter-spacing:-0.01em;margin:0}
   .tb-sub{font-size:12.5px;color:var(--ink-faint)}
   .tb-spacer{flex:1 1 auto}
-  .saved{font-size:11.5px;color:var(--ink-faint);font-family:var(--mono);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
-  .saved .dot{width:7px;height:7px;border-radius:50%;background:#4a9d7f}
-  .saved.warn .dot{background:#c9a227}
+  .sync{display:inline-flex;align-items:center;gap:6px;padding-left:12px;font-size:10.5px;font-family:var(--mono);color:var(--ink-soft);white-space:nowrap;line-height:1}
+  .sync::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--s-green);flex:0 0 auto}
+  .sync[data-state="saving"]{color:var(--ink)}
+  .sync[data-state="saving"]::before{background:var(--s-yellow)}
+  .sync[data-state="error"]{color:var(--s-red)}
+  .sync[data-state="error"]::before{background:var(--s-red)}
   .tb-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
   button{font-family:inherit}
   .btn{appearance:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:13px;font-weight:550;
@@ -62,6 +65,7 @@
   .head .row{display:flex}
   .corner{position:sticky;left:0;z-index:7;flex:0 0 var(--laneW);width:var(--laneW);background:var(--surface);border-right:1px solid var(--line-strong)}
   .corner.c1,.corner.c2{border-bottom:1px solid var(--line)}
+  .corner.c2{display:flex;align-items:center}
   .corner.c3{border-bottom:1px solid var(--line-strong);display:flex;align-items:flex-end;padding:0 12px 6px}
   .corner .cap{font-size:11px;color:var(--ink-faint);font-weight:600;letter-spacing:.02em;text-transform:uppercase}
   .h-month{height:24px;display:flex;align-items:center;padding:0 10px;font-size:11.5px;font-weight:650;color:var(--ink);
@@ -102,7 +106,7 @@
     user-select:none;touch-action:none;box-shadow:0 1px 2px rgba(28,36,51,.08)}
   .bar.series{border-right:2px dashed var(--bar-accent)}
   .bar:active{cursor:grabbing}
-  .bar .bt{font-size:12.5px;font-weight:600;line-height:1.15;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar .bt{font-size:12.5px;font-weight:600;line-height:1.15;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:clip}
   .bar .bd{font-size:10.5px;font-family:var(--mono);color:var(--ink-soft);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bar.dragging{box-shadow:0 6px 18px rgba(28,36,51,.22);z-index:20;opacity:.97}
   .bar .grip{position:absolute;top:0;bottom:0;width:9px;cursor:ew-resize;color:var(--bar-accent)}
@@ -205,7 +209,7 @@
     .rm{width:38px;height:38px}
   }
   @media (max-width:380px){
-    :root{--laneW:136px;--dayW:36px}
+    :root{--laneW:136px;--dayW:46px}
   }
 </style>
 
@@ -213,10 +217,8 @@
   <div class="toolbar">
     <div class="tb-top">
       <h1 class="tb-title">Ressourcenplanung</h1>
-      <span class="tb-sub">Auslastung je Mitarbeiter — Status für diese &amp; nächste KW</span>
       <span class="tb-spacer"></span>
       <span class="userbadge" id="userBadge" hidden></span>
-      <span class="saved" id="saved"><span class="dot"></span><span id="savedText">gespeichert</span></span>
     </div>
     <div class="tb-actions">
       <button class="btn primary" id="btnNew">＋ Neue Aufgabe</button>
@@ -225,7 +227,7 @@
       <span class="legend">
         <span class="lbl">Status je KW (Arbeitstage):</span>
         <span class="chip"><span class="sw" style="background:var(--s-red)"></span>0 frei</span>
-        <span class="chip"><span class="sw" style="background:var(--s-yellow)"></span>1 frei</span>
+        <span class="chip"><span class="sw" style="background:var(--s-yellow)"></span>&lt; 2 frei</span>
         <span class="chip"><span class="sw" style="background:var(--s-green)"></span>≥2 frei</span>
       </span>
     </div>
@@ -302,11 +304,11 @@ async function loadState(){
 }
 let saveTimer=null; const scheduleSave=()=>{clearTimeout(saveTimer);saveTimer=setTimeout(save,300);};
 async function save(){
-  if(!useCloud()){ setSaved("nicht verbunden",true); return; }
-  try{ setSaved("synchronisiere \u2026",false);
+  if(!useCloud()){ setSync("error"); return; }
+  try{ setSync("saving");
     const {error}=await sb.from("plan_state").upsert({id:PLAN_KEY,data:state,updated_by:CLIENT_ID,updated_at:new Date().toISOString()});
-    if(error) throw error; setSaved("in der Cloud gespeichert",false);
-  }catch(e){ setSaved("Cloud-Fehler \u2013 nicht gespeichert",true); }
+    if(error) throw error; setSync("saved");
+  }catch(e){ setSync("error"); }
 }
 function showConnError(msg){
   const board=document.getElementById("board");
@@ -316,7 +318,7 @@ function showConnError(msg){
       <div class="ce-msg">${esc(msg||"Verbindung konnte nicht aufgebaut werden.")}</div>
       <button class="btn primary" id="ce-retry">Erneut versuchen</button>
     </div></div>`;
-  setSaved("nicht verbunden",true);
+  setSync("error");
   const r=document.getElementById("ce-retry"); if(r) r.onclick=()=>location.reload();
 }
 
@@ -333,12 +335,19 @@ function initRealtime(){
       if(isBusy()){ pendingRemote=row.data; return; } // waehrend Drag/Popup zwischenspeichern
       applyRemote(row.data);
     })
-    .subscribe((status)=>{ if(status==="CHANNEL_ERROR"||status==="TIMED_OUT") setSaved("Verbindung unterbrochen",true); });
+    .subscribe((status)=>{ if(status==="CHANNEL_ERROR"||status==="TIMED_OUT") setSync("error"); });
 }
-function setSaved(t,w){document.getElementById("savedText").textContent=t;document.getElementById("saved").classList.toggle("warn",!!w);}
+/* ---------- Sync-Status (in der „Team & Status"-Ecke der Tabelle) ---------- */
+let syncState="saved";                                // 'saved' | 'saving' | 'error'
+function setSync(s){
+  syncState=s;
+  const el=document.getElementById("syncStatus"); if(!el) return;
+  el.dataset.state=s;
+  el.textContent = s==="saving" ? "in Bearbeitung" : s==="error" ? "nicht gesichert" : "gesichert";
+}
 
 /* ---------- STATUS + Wiederholung ---------- */
-/* Schwellen (freie Arbeitstage/Woche): <1 = rot · <2 = gelb · ≥2 = grün */
+/* Statusfarbe aus freien Arbeitstagen/Woche (Anzeige ungerundet): 0 = rot · >0 und <2 = gelb · ≥2 = grün */
 function taskLoad(t){ const l=Number(t.load); return isFinite(l)? Math.max(0,Math.min(100,l)) : 100; }
 function isWeekly(t){ return t.repeat==="weekly" && t.repeatUntil!=null; }
 function taskEnd(t){                                   // exklusives Ende des gesamten (ggf. wiederkehrenden) Vorgangs
@@ -373,8 +382,8 @@ function weekStatus(pid, mondayIdx){
     for(const t of state.tasks){ if(t.personId===pid && taskCoversDay(t,d)) load+=taskLoad(t); }
     free += 1 - Math.min(load,100)/100;               // Tagesauslastung bei 100% gekappt
   }
-  free=Math.round(free*100)/100;
-  const level = free<1 ? "red" : free<2 ? "yellow" : "green";
+  free=Math.round(free*100)/100;                      // präziser Wert für die Anzeige (NICHT auf ganze Tage runden)
+  const level = free<=0 ? "red" : free<2 ? "yellow" : "green";   // 0 = rot · >0 und <2 = gelb · ≥2 = grün
   return {free, work, level, kw:isoWeek(mondayIdx)};
 }
 const STATUS_WORD={red:"keine freie Kapazität",yellow:"unter 2 Tagen frei",green:"2+ Tage frei"};
@@ -460,7 +469,7 @@ function render(){
   document.getElementById("canvas").innerHTML=`
     <div class="head" style="width:${totalW}px">
       <div class="row"><div class="corner c1"></div><div style="display:flex">${monthCells}</div></div>
-      <div class="row"><div class="corner c2"></div><div style="display:flex">${weekCells}</div></div>
+      <div class="row"><div class="corner c2"><span class="sync" id="syncStatus" data-state="saved">gesichert</span></div><div style="display:flex">${weekCells}</div></div>
       <div class="row"><div class="corner c3"><span class="cap">Team &amp; Status</span></div><div style="display:flex">${dayCells}</div></div>
     </div>
     <div class="body" style="width:${totalW}px;height:${bodyH2}px">
@@ -483,6 +492,7 @@ function render(){
     if(nm){ nm.addEventListener("click",()=>openPersonTasks(pid));
       nm.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();openPersonTasks(pid);} }); }
   });
+  setSync(syncState);                                 // Sync-Status nach Neuaufbau der Ecke wiederherstellen
   board.scrollLeft=keep.l; board.scrollTop=keep.t;
 }
 
