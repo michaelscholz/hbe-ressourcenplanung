@@ -65,7 +65,7 @@
   .head .row{display:flex}
   .corner{position:sticky;left:0;z-index:7;flex:0 0 var(--laneW);width:var(--laneW);background:var(--surface);border-right:1px solid var(--line-strong)}
   .corner.c1,.corner.c2{border-bottom:1px solid var(--line)}
-  .corner.c2{display:flex;align-items:center}
+  .corner.c1{display:flex;align-items:center}
   .corner.c3{border-bottom:1px solid var(--line-strong);display:flex;align-items:flex-end;padding:0 12px 6px}
   .corner .cap{font-size:11px;color:var(--ink-faint);font-weight:600;letter-spacing:.02em;text-transform:uppercase}
   .h-month{height:24px;display:flex;align-items:center;padding:0 10px;font-size:11.5px;font-weight:650;color:var(--ink);
@@ -90,10 +90,14 @@
   .s-yellow{background:var(--s-yellow);color:var(--s-yellow)}
   .s-green{background:var(--s-green);color:var(--s-green)}
   .lane-label .meta{min-width:0;flex:1 1 auto;display:flex;flex-direction:column;gap:3px}
+  .lane-label .nm-row{display:flex;align-items:center;gap:8px;min-width:0}
+  .lane-label .nm-row .nm{flex:1 1 auto;min-width:0}
   .lane-pipe{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line-strong);background:var(--surface);border-radius:7px;padding:4px 6px;color:var(--ink-soft);cursor:pointer;line-height:0}
   .lane-pipe:hover{border-color:#aab4c4;color:var(--ink)}
   .lane-pipe:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .lane-pipe .lp-count{font-size:10.5px;font-family:var(--mono);font-weight:600;line-height:1}
+  .lane-pipe .lp-hold{display:inline-flex;align-items:center;gap:2px;font-size:9.5px;font-weight:700;font-family:var(--mono);line-height:1;color:#5a4200;background:var(--s-yellow);border-radius:5px;padding:2px 4px;margin-left:1px}
+  body.theme-dark .lane-pipe .lp-hold{color:#2a1f00}
   .lane-label .nm{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;cursor:pointer}
   .lane-label .nm:hover{text-decoration:underline}
   .lane-label .nm:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
@@ -109,6 +113,7 @@
     border:1px solid var(--bar-bd);background:var(--bar-bg);border-left:3px solid var(--bar-accent);
     user-select:none;touch-action:none;box-shadow:0 1px 2px rgba(28,36,51,.08)}
   .bar.series{border-right:2px dashed var(--bar-accent)}
+  .bar.onhold{border-left-color:var(--s-yellow);opacity:.82}
   .bar:active{cursor:grabbing}
   .bar .bt{font-size:12.5px;font-weight:600;line-height:1.15;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:clip}
   .bar .bd{font-size:10.5px;font-family:var(--mono);color:var(--ink-soft);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -158,6 +163,9 @@
   .pipe-item{cursor:grab}
   .pipe-item.dragging{opacity:.45;cursor:grabbing}
   .pipe-item.drag-over{border-color:var(--focus);box-shadow:inset 0 3px 0 -1px var(--focus)}
+  .pipe-item.onhold{border-left:3px solid var(--s-yellow)}
+  .hold-badge{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:#5a4200;background:var(--s-yellow);border-radius:5px;padding:1px 5px;vertical-align:1px}
+  body.theme-dark .hold-badge{color:#2a1f00}
   .task-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;cursor:pointer;background:var(--surface,#fff)}
   .task-item:hover{border-color:var(--line-strong);background:var(--surface-2,var(--surface-2))}
   .task-item:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
@@ -234,7 +242,6 @@
       <button class="btn primary" id="btnNew">＋ Neue Aufgabe</button>
       <button class="btn" id="btnToday">Heute</button>
       <button class="btn" id="btnTeam">Team bearbeiten</button>
-      <button class="btn" id="btnPipeline">Pipeline</button>
       <span class="legend">
         <span class="lbl">Status je KW (Arbeitstage):</span>
         <span class="chip"><span class="sw" style="background:var(--s-red)"></span>0 frei</span>
@@ -261,6 +268,7 @@ const DAY=86400000, STORAGE_KEY="hbe_planner_v1";
 const PALETTE=["#3f6fb5","#3f9d84","#c0873a","#9a5ba6","#c65d5d","#5c6f8a","#4a8f5b","#b07d3e"];
 const WD=["Mo","Di","Mi","Do","Fr","Sa","So"], MON=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 const PIPE_ICON='<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
+const PAUSE_ICON='<svg viewBox="0 0 12 12" width="8" height="8" fill="currentColor" aria-hidden="true"><rect x="2" y="1.5" width="2.6" height="9" rx="1"/><rect x="7.4" y="1.5" width="2.6" height="9" rx="1"/></svg>';
 
 /* ---------- date helpers (whole UTC day-indices) ---------- */
 const di=(y,m,d)=>Math.floor(Date.UTC(y,m,d)/DAY);
@@ -295,6 +303,10 @@ function migrate(s){
     if(t.repeat==="weekly" && t.repeatUntil==null) t.repeatUntil=t.start;
     if(t.repeat!=="weekly") t.repeatUntil=null;
     if(t.start==null){ t.repeat="none"; t.repeatUntil=null; }   // Pipeline-Aufgaben haben keine Wiederholung
+    if(typeof t.customer!=="string") t.customer="";   // optionale Felder
+    if(typeof t.contact!=="string")  t.contact="";
+    if(typeof t.order!=="string")    t.order="";
+    if(t.status!=="onhold") t.status="active";         // Status: 'active' | 'onhold'
   }
   for(const p of s.people){
     if(!Array.isArray(p.workdays)||p.workdays.length===0) p.workdays=[0,1,2,3,4];
@@ -474,14 +486,16 @@ function render(){
   let lanes="";
   state.people.forEach((p,idx)=>{
     const cur=weekStatus(p.id,monToday), nxt=weekStatus(p.id,monToday+7);
-    const pcnt=state.tasks.filter(t=>t.start==null&&t.personId===p.id).length;
+    const pipeOf=state.tasks.filter(t=>t.start==null&&t.personId===p.id);
+    const pcnt=pipeOf.length, phold=pipeOf.filter(t=>t.status==="onhold").length;
     const wkRow=(label,st)=>`<span class="wk">
         <span class="status s-${st.level}" role="img" aria-label="${label} KW ${st.kw}: ${STATUS_WORD[st.level]}" title="${label} (KW ${st.kw}) — ${STATUS_WORD[st.level]} · ${fmtFree(st.free)}/${st.work} frei"></span>
         <span class="wtxt">${label} KW ${st.kw}</span><span class="wfree">· ${fmtFree(st.free)}/${st.work} frei</span></span>`;
     lanes+=`<div class="lane" data-pid="${p.id}" data-idx="${idx}" style="height:${LAYOUT[idx].height}px">
       <div class="lane-label">
-        <span class="meta"><span class="nm" role="button" tabindex="0" title="Aufgaben anzeigen">${esc(p.name)}</span>${wkRow("aktuelle",cur)}${wkRow("nächste",nxt)}</span>
-        <button class="lane-pipe" data-pid="${p.id}" title="Pipeline von ${esc(p.name)} (${pcnt})" aria-label="Pipeline von ${esc(p.name)}, ${pcnt} Aufgaben">${PIPE_ICON}<span class="lp-count">${pcnt}</span></button>
+        <span class="meta">
+          <span class="nm-row"><span class="nm" role="button" tabindex="0" title="Aufgaben anzeigen">${esc(p.name)}</span><button class="lane-pipe" data-pid="${p.id}" title="Pipeline von ${esc(p.name)}: ${pcnt} Aufgabe${pcnt===1?"":"n"}${phold?`, davon ${phold} on hold`:""}" aria-label="Pipeline von ${esc(p.name)}, ${pcnt} Aufgaben${phold?`, ${phold} on hold`:""}">${PIPE_ICON}<span class="lp-count">${pcnt}</span>${phold?`<span class="lp-hold">${PAUSE_ICON}${phold}</span>`:""}</button></span>
+          ${wkRow("aktuelle",cur)}${wkRow("nächste",nxt)}</span>
       </div>
       <div class="track" style="${trackBg}"></div>
     </div>`;
@@ -490,8 +504,8 @@ function render(){
   document.getElementById("canvas").style.width=totalW+"px";
   document.getElementById("canvas").innerHTML=`
     <div class="head" style="width:${totalW}px">
-      <div class="row"><div class="corner c1"></div><div style="display:flex">${monthCells}</div></div>
-      <div class="row"><div class="corner c2"><span class="sync" id="syncStatus" data-state="saved">gesichert</span></div><div style="display:flex">${weekCells}</div></div>
+      <div class="row"><div class="corner c1"><span class="sync" id="syncStatus" data-state="saved">gesichert</span></div><div style="display:flex">${monthCells}</div></div>
+      <div class="row"><div class="corner c2"></div><div style="display:flex">${weekCells}</div></div>
       <div class="row"><div class="corner c3"><span class="cap">Team &amp; Status</span></div><div style="display:flex">${dayCells}</div></div>
     </div>
     <div class="body" style="width:${totalW}px;height:${bodyH2}px">
@@ -517,8 +531,6 @@ function render(){
     if(pipeBtn) pipeBtn.addEventListener("click",e=>{ e.stopPropagation(); openPipeline(pipeBtn.dataset.pid); });
   });
   setSync(syncState);                                 // Sync-Status nach Neuaufbau der Ecke wiederherstellen
-  const pipeCount=state.tasks.filter(t=>t.start==null).length;
-  const pbtn=document.getElementById("btnPipeline"); if(pbtn) pbtn.textContent = pipeCount ? `Pipeline (${pipeCount})` : "Pipeline";
   board.scrollLeft=keep.l; board.scrollTop=keep.t;
 }
 
@@ -535,7 +547,7 @@ function buildTrackBg(dw,rangeStart){
   return `background-image:${weekLines},${dayLines},${wknd};background-position-x:${off}px;`;
 }
 function buildBar(t,idx,dw,rangeStart,occStart,occDays){
-  const el=document.createElement("div"); el.className="bar"+(isWeekly(t)?" series":""); el.tabIndex=0;
+  const el=document.createElement("div"); el.className="bar"+(isWeekly(t)?" series":"")+(t.status==="onhold"?" onhold":""); el.tabIndex=0;
   el.dataset.id=t.id; el.dataset.occ=occStart;
   const person=state.people.find(x=>x.id===t.personId), load=taskLoad(t);
   const top=LAYOUT[idx].top + BARTOP + (SLOTOF[occKey(t.id,occStart)]||0)*SLOT;
@@ -557,7 +569,11 @@ function showTip(e,t,occStart,occDays){ const el=document.getElementById("tip"),
   el.innerHTML=`<div class="tt">${esc(t.title)}</div>
     <div class="tl">Auslastung: <b>${taskLoad(t)} %</b></div>
     <div class="tl">${person?esc(person.name)+" · ":""}${fmtDE(s)}–${fmtDE(s+d-1)} · ${d} Tag${d===1?"":"e"}</div>
-    ${isWeekly(t)?`<div class="tl">⟳ wöchentlich bis ${fmtDE(t.repeatUntil)}</div>`:""}`;
+    ${isWeekly(t)?`<div class="tl">⟳ wöchentlich bis ${fmtDE(t.repeatUntil)}</div>`:""}
+    ${t.status==="onhold"?`<div class="tl"><b>⏸ On hold</b></div>`:""}
+    ${t.customer?`<div class="tl">Kunde: <b>${esc(t.customer)}</b></div>`:""}
+    ${t.contact?`<div class="tl">Ansprechpartner: <b>${esc(t.contact)}</b></div>`:""}
+    ${t.order?`<div class="tl">Bestellung: <b>${esc(t.order)}</b></div>`:""}`;
   el.classList.add("show"); moveTip(e); }
 function moveTip(e){ const el=document.getElementById("tip"); if(!el.classList.contains("show"))return;
   const pad=14, r=el.getBoundingClientRect(); let x=e.clientX+pad, y=e.clientY+pad;
@@ -663,9 +679,10 @@ function openEditor(task,prefill,returnTo){
   if(!task && state.people.length===0){ toast("Bitte zuerst über „Team bearbeiten“ eine Person anlegen."); return; }
   const editing=!!task;
   const defStart=Math.max(todayInfo().today, MIN_START);
-  const t=editing?{...task}:{id:null,title:"",personId:(prefill?.personId)||state.people[0].id,start:(prefill?.pipeline?null:((prefill?.start)??defStart)),days:(prefill?.days)||1,note:"",load:100,repeat:"none",repeatUntil:null};
+  const t=editing?{...task}:{id:null,title:"",personId:(prefill?.personId)||state.people[0].id,start:(prefill?.pipeline?null:((prefill?.start)??defStart)),days:(prefill?.days)||1,note:"",load:100,repeat:"none",repeatUntil:null,customer:"",contact:"",order:"",status:"active"};
   if(editing){ t.load=(t.load==null?100:t.load); t.repeat=(t.repeat==="weekly"?"weekly":"none"); }
   const isPipe=t.start==null;                          // Pipeline = noch kein Datum
+  const isHold=t.status==="onhold";                    // On-hold (v. a. für die Pipeline relevant)
   const startField=(t.start!=null)?Math.max(t.start,MIN_START):defStart;   // Vorbelegung fürs (ggf. ausgeblendete) Datumsfeld
   const isRep=t.repeat==="weekly";
   const untilIso=idxToIso(isRep&&t.repeatUntil!=null?t.repeatUntil:(startField+7*4));
@@ -678,6 +695,7 @@ function openEditor(task,prefill,returnTo){
         <div class="field"><label for="f-title">Thema</label><input id="f-title" type="text" placeholder="z. B. S/4HANA Migration Kunde A" value="${esc(t.title)}" /></div>
         <div class="field"><label for="f-person">Person</label><select id="f-person">${opts}</select></div>
         <div class="field"><label class="chk" style="padding-top:0"><input type="checkbox" id="f-pipe" ${isPipe?"checked":""} /> In die Pipeline – noch kein Datum</label></div>
+        <div class="field"><label class="chk" style="padding-top:0"><input type="checkbox" id="f-hold" ${isHold?"checked":""} /> On hold (zurückgestellt)</label></div>
         <div class="row2">
           <div class="field ${isPipe?"hidden":""}" id="f-start-wrap"><label for="f-start">Start</label><input id="f-start" type="date" min="${idxToIso(MIN_START)}" value="${idxToIso(startField)}" /></div>
           <div class="field"><label for="f-load">Auslastung (%)</label><input id="f-load" type="number" min="5" max="100" step="5" value="${t.load}" /></div>
@@ -693,6 +711,11 @@ function openEditor(task,prefill,returnTo){
           <input id="f-until" type="date" value="${untilIso}" />
           <div class="sublabel2">wiederholt sich jede Woche am selben Wochentag bis zu diesem Datum</div>
         </div>
+        <div class="row2">
+          <div class="field"><label for="f-customer">Kunde</label><input id="f-customer" type="text" maxlength="80" placeholder="optional" value="${esc(t.customer||"")}" /></div>
+          <div class="field"><label for="f-contact">Ansprechpartner</label><input id="f-contact" type="text" maxlength="80" placeholder="optional" value="${esc(t.contact||"")}" /></div>
+        </div>
+        <div class="field"><label for="f-order">Bestellung</label><input id="f-order" type="text" maxlength="40" placeholder="optional" value="${esc(t.order||"")}" /></div>
         <div class="field"><label for="f-note">Notiz (optional)</label><textarea id="f-note" placeholder="Kontext, Ticket-Nr., Kunde …">${esc(t.note||"")}</textarea></div>
       </div>
       <div class="mfoot">${editing?`<button class="link-danger" id="f-del">Löschen</button>`:""}<span class="sp"></span>
@@ -725,8 +748,12 @@ function openEditor(task,prefill,returnTo){
       if(document.getElementById("f-rep").checked){ repeat="weekly"; repeatUntil=isoToIdx(document.getElementById("f-until").value); if(!(repeatUntil>=start)) repeatUntil=start; }
     }
     const note=document.getElementById("f-note").value;
-    if(editing) Object.assign(state.tasks.find(x=>x.id===task.id),{title,personId,start,days,note,load,repeat,repeatUntil});
-    else state.tasks.push({id:uid(),title,personId,start,days,note,load,repeat,repeatUntil});
+    const customer=document.getElementById("f-customer").value.trim();
+    const contact=document.getElementById("f-contact").value.trim();
+    const order=document.getElementById("f-order").value.trim();
+    const status=document.getElementById("f-hold").checked?"onhold":"active";
+    if(editing) Object.assign(state.tasks.find(x=>x.id===task.id),{title,personId,start,days,note,load,repeat,repeatUntil,customer,contact,order,status});
+    else state.tasks.push({id:uid(),title,personId,start,days,note,load,repeat,repeatUntil,customer,contact,order,status});
     render();scheduleSave();toast(editing?"Gespeichert":(pipe?"In die Pipeline gelegt":"Aufgabe angelegt"));close();
   };
   document.addEventListener("keydown",onEsc);
@@ -786,12 +813,13 @@ function openPipeline(pid){
     const a=sib[pos], b=sib[tgt], tmp=state.tasks[a]; state.tasks[a]=state.tasks[b]; state.tasks[b]=tmp;
     render(); scheduleSave(); openPipeline(pid);        // Ansicht mit neuer Reihenfolge neu aufbauen
   };
-  const rowHtml=(t,i,n)=>`<div class="task-item pipe-item" draggable="true" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.title)} bearbeiten">
+  const rowHtml=(t,i,n)=>`<div class="task-item pipe-item${t.status==="onhold"?" onhold":""}" draggable="true" data-id="${t.id}" role="button" tabindex="0" aria-label="${esc(t.title)} bearbeiten">
       <div class="ord">
         <button class="ordb" data-move="up" data-id="${t.id}" ${i===0?"disabled":""} title="nach oben" aria-label="nach oben">▲</button>
         <button class="ordb" data-move="down" data-id="${t.id}" ${i===n-1?"disabled":""} title="nach unten" aria-label="nach unten">▼</button>
       </div>
-      <div class="ti-main"><div class="ti-title">${esc(t.title)}</div><div class="ti-meta">${t.days} Tag${t.days===1?"":"e"} · kein Datum</div></div>
+      <div class="ti-main"><div class="ti-title">${esc(t.title)}${t.status==="onhold"?' <span class="hold-badge">on hold</span>':""}</div>
+        <div class="ti-meta">${t.days} Tag${t.days===1?"":"e"}${t.customer?" · "+esc(t.customer):""} · kein Datum</div></div>
       <div class="ti-load">${taskLoad(t)} %</div></div>`;
   let body;
   if(!pipe.length){
@@ -914,7 +942,6 @@ document.getElementById("board").addEventListener("wheel",e=>{ if(e.shiftKey)ret
 document.getElementById("btnNew").onclick=()=>openEditor(null);
 document.getElementById("btnToday").onclick=jumpToday;
 document.getElementById("btnTeam").onclick=openTeam;
-document.getElementById("btnPipeline").onclick=()=>openPipeline();
 window.addEventListener("resize",()=>render());
 
 /* ---------- Teams-Integration ---------- */
