@@ -95,6 +95,7 @@
   .lane-pipe{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line-strong);background:var(--surface);border-radius:7px;padding:4px 6px;color:var(--ink-soft);cursor:pointer;line-height:0}
   .lane-pipe:hover{border-color:#aab4c4;color:var(--ink)}
   .lane-pipe:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .lane-pipe .lp-play{display:inline-flex;color:var(--s-green)}
   .lane-pipe .lp-count{font-size:10.5px;font-family:var(--mono);font-weight:600;line-height:1}
   .lane-pipe .lp-hold{display:inline-flex;align-items:center;gap:2px;font-size:9.5px;font-weight:700;font-family:var(--mono);line-height:1;color:#5a4200;background:var(--s-yellow);border-radius:5px;padding:2px 4px;margin-left:1px}
   body.theme-dark .lane-pipe .lp-hold{color:#2a1f00}
@@ -160,10 +161,16 @@
   .pipe-sum{display:flex;gap:10px;margin:2px 0 16px}
   .pipe-sum .ps-item{flex:1;display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface-2)}
   .pipe-sum .ps-val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);line-height:1.1}
-  .pipe-sum .ps-label{font-size:11px;color:var(--ink-soft)}
+  .pipe-sum .ps-label{font-size:11px;color:var(--ink-soft);display:inline-flex;align-items:center;gap:4px}
+  .pipe-sum .ps-ic{display:inline-flex;line-height:0}
+  .pipe-sum .ps-ready{border-color:var(--s-green);background:rgba(63,157,95,.10)}
+  .pipe-sum .ps-ready .ps-val{color:#2b6f47}
+  .pipe-sum .ps-ready .ps-ic{color:var(--s-green)}
+  body.theme-dark .pipe-sum .ps-ready .ps-val{color:var(--s-green)}
   .pipe-sum .ps-hold{border-color:var(--s-yellow);background:rgba(224,160,32,.10)}
   .pipe-sum .ps-hold .ps-val{color:#8a6100}
-  body.theme-dark .pipe-sum .ps-hold .ps-val{color:var(--s-yellow)}
+  .pipe-sum .ps-hold .ps-ic{color:#8a6100}
+  body.theme-dark .pipe-sum .ps-hold .ps-val,body.theme-dark .pipe-sum .ps-hold .ps-ic{color:var(--s-yellow)}
   .pipe-group{margin:0 0 14px}
   .pipe-group:last-child{margin-bottom:0}
   .pipe-head{font-size:11px;font-weight:650;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.02em;margin:0 0 6px}
@@ -274,8 +281,8 @@
 const DAY=86400000, STORAGE_KEY="hbe_planner_v1";
 const PALETTE=["#3f6fb5","#3f9d84","#c0873a","#9a5ba6","#c65d5d","#5c6f8a","#4a8f5b","#b07d3e"];
 const WD=["Mo","Di","Mi","Do","Fr","Sa","So"], MON=["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
-const PIPE_ICON='<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
 const PAUSE_ICON='<svg viewBox="0 0 12 12" width="8" height="8" fill="currentColor" aria-hidden="true"><rect x="2" y="1.5" width="2.6" height="9" rx="1"/><rect x="7.4" y="1.5" width="2.6" height="9" rx="1"/></svg>';
+const PLAY_ICON='<svg viewBox="0 0 12 12" width="9" height="9" fill="currentColor" aria-hidden="true"><path d="M3.2 1.9c0-.5.53-.82.98-.54l6 3.9c.42.27.42.9 0 1.18l-6 3.9c-.45.28-.98-.04-.98-.54V1.9Z"/></svg>';
 
 /* ---------- date helpers (whole UTC day-indices) ---------- */
 const di=(y,m,d)=>Math.floor(Date.UTC(y,m,d)/DAY);
@@ -494,15 +501,16 @@ function render(){
   state.people.forEach((p,idx)=>{
     const cur=weekStatus(p.id,monToday), nxt=weekStatus(p.id,monToday+7);
     const pipeOf=state.tasks.filter(t=>t.start==null&&t.personId===p.id);
-    const pdays=pipeOf.reduce((s,t)=>s+(t.days||0),0);
-    const pholdDays=pipeOf.filter(t=>t.status==="onhold").reduce((s,t)=>s+(t.days||0),0);
+    const effDays=t=>(t.days||0)*taskLoad(t)/100;      // effektive Tage = Dauer × Auslastung
+    const pholdDays=pipeOf.filter(t=>t.status==="onhold").reduce((s,t)=>s+effDays(t),0);
+    const preadyDays=pipeOf.filter(t=>t.status!=="onhold").reduce((s,t)=>s+effDays(t),0);   // einplanbare Tage
     const wkRow=(label,st)=>`<span class="wk">
         <span class="status s-${st.level}" role="img" aria-label="${label} KW ${st.kw}: ${STATUS_WORD[st.level]}" title="${label} (KW ${st.kw}) — ${STATUS_WORD[st.level]} · ${fmtFree(st.free)}/${st.work} frei"></span>
         <span class="wtxt">${label} KW ${st.kw}</span><span class="wfree">· ${fmtFree(st.free)}/${st.work} frei</span></span>`;
     lanes+=`<div class="lane" data-pid="${p.id}" data-idx="${idx}" style="height:${LAYOUT[idx].height}px">
       <div class="lane-label">
         <span class="meta">
-          <span class="nm-row"><span class="nm" role="button" tabindex="0" title="Aufgaben anzeigen">${esc(p.name)}</span><button class="lane-pipe" data-pid="${p.id}" title="Pipeline von ${esc(p.name)}: ${pdays} Tag${pdays===1?"":"e"} gesamt${pholdDays?`, davon ${pholdDays} on hold`:""}" aria-label="Pipeline von ${esc(p.name)}, ${pdays} Tage gesamt${pholdDays?`, ${pholdDays} Tage on hold`:""}">${PIPE_ICON}<span class="lp-count">${pdays}</span>${pholdDays?`<span class="lp-hold">${PAUSE_ICON}${pholdDays}</span>`:""}</button></span>
+          <span class="nm-row"><span class="nm" role="button" tabindex="0" title="Aufgaben anzeigen">${esc(p.name)}</span><button class="lane-pipe" data-pid="${p.id}" title="Pipeline von ${esc(p.name)}: ${fmtFree(preadyDays)} einplanbare Tage${pholdDays?`, ${fmtFree(pholdDays)} on hold`:""}" aria-label="Pipeline von ${esc(p.name)}, ${fmtFree(preadyDays)} einplanbare Tage${pholdDays?`, ${fmtFree(pholdDays)} Tage on hold`:""}"><span class="lp-play">${PLAY_ICON}</span><span class="lp-count">${fmtFree(preadyDays)}</span>${pholdDays?`<span class="lp-hold">${PAUSE_ICON}${fmtFree(pholdDays)}</span>`:""}</button></span>
           ${wkRow("aktuelle",cur)}${wkRow("nächste",nxt)}</span>
       </div>
       <div class="track" style="${trackBg}"></div>
@@ -732,7 +740,10 @@ function openEditor(task,prefill,returnTo){
   const onEsc=e=>{ if(e.key==="Escape") close(); };
   const close=()=>{ document.removeEventListener("keydown",onEsc); root.innerHTML=""; if(typeof returnTo==="function") returnTo(); };
   const syncPipe=()=>{
-    const pipe=document.getElementById("f-pipe").checked;
+    const holdCb=document.getElementById("f-hold"), pipeCb=document.getElementById("f-pipe");
+    if(holdCb.checked){ pipeCb.checked=true; pipeCb.disabled=true; }   // On hold erzwingt Pipeline (kein Datum)
+    else { pipeCb.disabled=false; }
+    const pipe=pipeCb.checked;
     document.getElementById("f-start-wrap").classList.toggle("hidden",pipe);
     document.getElementById("f-rep-wrap").classList.toggle("hidden",pipe);
     document.getElementById("f-until-wrap").classList.toggle("hidden", pipe || !document.getElementById("f-rep").checked);
@@ -741,7 +752,9 @@ function openEditor(task,prefill,returnTo){
   document.getElementById("scrim").addEventListener("pointerdown",e=>{if(e.target.id==="scrim")close();});
   document.getElementById("f-cancel").onclick=close;
   document.getElementById("f-pipe").addEventListener("change",syncPipe);
+  document.getElementById("f-hold").addEventListener("change",syncPipe);
   document.getElementById("f-rep").addEventListener("change",syncPipe);
+  syncPipe();                                         // Anfangszustand (z. B. On-hold-Aufgabe: Datum gesperrt)
   if(editing) document.getElementById("f-del").onclick=()=>{removeTask(task.id);close();};
   document.getElementById("f-save").onclick=()=>{
     const title=document.getElementById("f-title").value.trim()||"(ohne Titel)";
@@ -813,8 +826,9 @@ function openPipeline(pid){
   const person = pid ? state.people.find(p=>p.id===pid) : null;
   if(pid && !person) return;
   const pipe=state.tasks.filter(t=>t.start==null && (!pid || t.personId===pid));
-  const totalDays=pipe.reduce((s,t)=>s+(t.days||0),0);
-  const holdDays=pipe.filter(t=>t.status==="onhold").reduce((s,t)=>s+(t.days||0),0);
+  const effDays=t=>(t.days||0)*taskLoad(t)/100;        // effektive Tage = Dauer × Auslastung
+  const holdDays=pipe.filter(t=>t.status==="onhold").reduce((s,t)=>s+effDays(t),0);
+  const readyDays=pipe.filter(t=>t.status!=="onhold").reduce((s,t)=>s+effDays(t),0);   // einplanbare Tage
   const move=(id,dir)=>{                               // dir: -1 hoch, +1 runter (innerhalb der Person)
     const t=state.tasks.find(x=>x.id===id); if(!t) return;
     const sib=[]; state.tasks.forEach((x,i)=>{ if(x.start==null && x.personId===t.personId) sib.push(i); });
@@ -846,8 +860,8 @@ function openPipeline(pid){
   const title = pid ? `Pipeline – ${esc(person.name)}` : "Pipeline – anstehende Aufgaben ohne Datum";
   const addLabel = pid ? `＋ Aufgabe für ${esc(person.name)}` : "＋ Aufgabe in Pipeline";
   const sumHtml=`<div class="pipe-sum">
-        <div class="ps-item"><span class="ps-val">${totalDays}</span><span class="ps-label">Tage gesamt</span></div>
-        <div class="ps-item ps-hold"><span class="ps-val">${holdDays}</span><span class="ps-label">Tage on hold</span></div>
+        <div class="ps-item ps-ready"><span class="ps-val">${fmtFree(readyDays)}</span><span class="ps-label"><span class="ps-ic">${PLAY_ICON}</span>Einplanbare Tage</span></div>
+        <div class="ps-item ps-hold"><span class="ps-val">${fmtFree(holdDays)}</span><span class="ps-label"><span class="ps-ic">${PAUSE_ICON}</span>Tage on hold</span></div>
       </div>`;
   const root=document.getElementById("modalRoot");
   root.innerHTML=`
