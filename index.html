@@ -157,6 +157,13 @@
   .chk input{width:16px;height:16px;cursor:pointer}
   .sublabel2{font-size:11px;color:var(--ink-faint);margin-top:5px}
   .tasklist{display:flex;flex-direction:column;gap:6px}
+  .pipe-sum{display:flex;gap:10px;margin:2px 0 16px}
+  .pipe-sum .ps-item{flex:1;display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface-2)}
+  .pipe-sum .ps-val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);line-height:1.1}
+  .pipe-sum .ps-label{font-size:11px;color:var(--ink-soft)}
+  .pipe-sum .ps-hold{border-color:var(--s-yellow);background:rgba(224,160,32,.10)}
+  .pipe-sum .ps-hold .ps-val{color:#8a6100}
+  body.theme-dark .pipe-sum .ps-hold .ps-val{color:var(--s-yellow)}
   .pipe-group{margin:0 0 14px}
   .pipe-group:last-child{margin-bottom:0}
   .pipe-head{font-size:11px;font-weight:650;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.02em;margin:0 0 6px}
@@ -487,14 +494,15 @@ function render(){
   state.people.forEach((p,idx)=>{
     const cur=weekStatus(p.id,monToday), nxt=weekStatus(p.id,monToday+7);
     const pipeOf=state.tasks.filter(t=>t.start==null&&t.personId===p.id);
-    const pcnt=pipeOf.length, phold=pipeOf.filter(t=>t.status==="onhold").length;
+    const pdays=pipeOf.reduce((s,t)=>s+(t.days||0),0);
+    const pholdDays=pipeOf.filter(t=>t.status==="onhold").reduce((s,t)=>s+(t.days||0),0);
     const wkRow=(label,st)=>`<span class="wk">
         <span class="status s-${st.level}" role="img" aria-label="${label} KW ${st.kw}: ${STATUS_WORD[st.level]}" title="${label} (KW ${st.kw}) — ${STATUS_WORD[st.level]} · ${fmtFree(st.free)}/${st.work} frei"></span>
         <span class="wtxt">${label} KW ${st.kw}</span><span class="wfree">· ${fmtFree(st.free)}/${st.work} frei</span></span>`;
     lanes+=`<div class="lane" data-pid="${p.id}" data-idx="${idx}" style="height:${LAYOUT[idx].height}px">
       <div class="lane-label">
         <span class="meta">
-          <span class="nm-row"><span class="nm" role="button" tabindex="0" title="Aufgaben anzeigen">${esc(p.name)}</span><button class="lane-pipe" data-pid="${p.id}" title="Pipeline von ${esc(p.name)}: ${pcnt} Aufgabe${pcnt===1?"":"n"}${phold?`, davon ${phold} on hold`:""}" aria-label="Pipeline von ${esc(p.name)}, ${pcnt} Aufgaben${phold?`, ${phold} on hold`:""}">${PIPE_ICON}<span class="lp-count">${pcnt}</span>${phold?`<span class="lp-hold">${PAUSE_ICON}${phold}</span>`:""}</button></span>
+          <span class="nm-row"><span class="nm" role="button" tabindex="0" title="Aufgaben anzeigen">${esc(p.name)}</span><button class="lane-pipe" data-pid="${p.id}" title="Pipeline von ${esc(p.name)}: ${pdays} Tag${pdays===1?"":"e"} gesamt${pholdDays?`, davon ${pholdDays} on hold`:""}" aria-label="Pipeline von ${esc(p.name)}, ${pdays} Tage gesamt${pholdDays?`, ${pholdDays} Tage on hold`:""}">${PIPE_ICON}<span class="lp-count">${pdays}</span>${pholdDays?`<span class="lp-hold">${PAUSE_ICON}${pholdDays}</span>`:""}</button></span>
           ${wkRow("aktuelle",cur)}${wkRow("nächste",nxt)}</span>
       </div>
       <div class="track" style="${trackBg}"></div>
@@ -805,6 +813,8 @@ function openPipeline(pid){
   const person = pid ? state.people.find(p=>p.id===pid) : null;
   if(pid && !person) return;
   const pipe=state.tasks.filter(t=>t.start==null && (!pid || t.personId===pid));
+  const totalDays=pipe.reduce((s,t)=>s+(t.days||0),0);
+  const holdDays=pipe.filter(t=>t.status==="onhold").reduce((s,t)=>s+(t.days||0),0);
   const move=(id,dir)=>{                               // dir: -1 hoch, +1 runter (innerhalb der Person)
     const t=state.tasks.find(x=>x.id===id); if(!t) return;
     const sib=[]; state.tasks.forEach((x,i)=>{ if(x.start==null && x.personId===t.personId) sib.push(i); });
@@ -835,11 +845,15 @@ function openPipeline(pid){
   }
   const title = pid ? `Pipeline – ${esc(person.name)}` : "Pipeline – anstehende Aufgaben ohne Datum";
   const addLabel = pid ? `＋ Aufgabe für ${esc(person.name)}` : "＋ Aufgabe in Pipeline";
+  const sumHtml=`<div class="pipe-sum">
+        <div class="ps-item"><span class="ps-val">${totalDays}</span><span class="ps-label">Tage gesamt</span></div>
+        <div class="ps-item ps-hold"><span class="ps-val">${holdDays}</span><span class="ps-label">Tage on hold</span></div>
+      </div>`;
   const root=document.getElementById("modalRoot");
   root.innerHTML=`
    <div class="scrim" id="scrim"><div class="modal" role="dialog" aria-modal="true" aria-label="Pipeline">
       <h2>${title}</h2>
-      <div class="mbody">${body}</div>
+      <div class="mbody">${sumHtml}${body}</div>
       <div class="mfoot"><button class="btn" id="pl-add">${addLabel}</button><span class="sp"></span><button class="btn primary" id="pl-close">Schließen</button></div>
    </div></div>`;
   const onEsc=e=>{ if(e.key==="Escape") close(); };
