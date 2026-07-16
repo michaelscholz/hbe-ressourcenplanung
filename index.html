@@ -1,22 +1,25 @@
+<!DOCTYPE html>
+<html lang="de">
 <!--
   Ressourcenplanung — Teams-Tab-App (Supabase).
   Alle Features: Prozent-Auslastung, wöchentliche Serien, Stapelung, Tooltip,
   Aufgabenliste je Person, Arbeitstage & Team-Reihenfolge.
-  Geteilter Stand + Live-Abgleich über Supabase; Fallback auf localStorage.
+  Geteilter Stand + Live-Abgleich über Supabase (kein lokaler Fallback).
   Hell-/Dunkel-Theme folgt Teams.
 -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>HBE Ressourcenplanung</title>
-<link rel="icon" type="image/png" sizes="128x128" href="icon/favicon.png" />
+<link rel="icon" type="image/svg+xml" href="icon/favicon.svg" />
 <style>
   :root{
-    --ink:#1c2433; --ink-soft:#54617a; --ink-faint:#8b96ab;
-    --line:#e4e8ee; --line-strong:#cbd3df; --weekend:#f3f5f9;
-    --today:#e0632c; --primary:#2b4a7a; --primary-ink:#fff; --focus:#2b6fe0;
-    --bar-bg:rgba(74,90,118,.11); --bar-bd:rgba(74,90,118,.34); --bar-accent:#4a5a76;
-    --s-red:#d64545; --s-yellow:#e0a020; --s-green:#3f9d5f;
-    --bg:#eceff4; --surface:#ffffff; --surface-2:#fbfcfe; --row-alt:#fcfdfe;
+    --ink:#12302a; --ink-soft:#4c6b62; --ink-faint:#82988e;
+    --line:#e1eae5; --line-strong:#c4d5cc; --weekend:#eff6f1;
+    --today:#e0632c; --primary:#02423a; --primary-ink:#fff; --focus:#0c9a39;
+    --hbe-green:#0c9a39; --hbe-dark:#02423a;
+    --bar-bg:rgba(2,66,58,.09); --bar-bd:rgba(2,66,58,.32); --bar-accent:#2f6a5c;
+    --s-red:#d64545; --s-yellow:#e0a020; --s-green:#0c9a39;
+    --bg:#ecf3ee; --surface:#ffffff; --surface-2:#f9fcfa; --row-alt:#fbfdfc;
     --dayW:56px; --laneW:244px; --rowH:76px;
     --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
@@ -27,15 +30,20 @@
   body{font-family:var(--font);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
   .app{height:100%;display:flex;flex-direction:column}
   body.theme-dark{
-    --bg:#1f2329; --surface:#292d34; --surface-2:#20242b; --row-alt:#2c313a;
-    --ink:#e7eaf0; --ink-soft:#aeb7c4; --ink-faint:#7e889a;
-    --line:#3a404b; --line-strong:#4b5563; --weekend:#232830;
-    --bar-bg:rgba(150,170,205,.16); --bar-bd:rgba(150,170,205,.36); --bar-accent:#8fa6cf;
+    --bg:#1c2420; --surface:#262f2a; --surface-2:#1e2722; --row-alt:#2a352f;
+    --ink:#e5efe9; --ink-soft:#a8bfb2; --ink-faint:#7b9187;
+    --line:#38463f; --line-strong:#4b5f55; --weekend:#212b25;
+    --bar-bg:rgba(140,205,175,.15); --bar-bd:rgba(140,205,175,.36); --bar-accent:#84c2a4;
   }
 
   .toolbar{flex:0 0 auto;background:var(--surface);border-bottom:1px solid var(--line);padding:14px 18px 12px}
-  .tb-top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-  .tb-title{font-size:16px;font-weight:650;letter-spacing:-0.01em;margin:0}
+  .tb-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .tb-logo{height:39px;width:auto;flex:0 0 auto;display:block}
+  .tb-logo .lg-sym{fill:var(--hbe-green)}
+  .tb-logo .lg-word{fill:var(--hbe-dark)}
+  body.theme-dark .tb-logo .lg-word{fill:#e7eaf0}
+  .tb-title{font-size:16px;font-weight:650;letter-spacing:-0.01em;margin:0;color:var(--hbe-dark)}
+  body.theme-dark .tb-title{color:#e7eaf0}
   .tb-sub{font-size:12.5px;color:var(--ink-faint)}
   .tb-spacer{flex:1 1 auto}
   .sync{display:inline-flex;align-items:center;gap:6px;padding-left:12px;font-size:10.5px;font-family:var(--mono);color:var(--ink-soft);white-space:nowrap;line-height:1}
@@ -44,13 +52,13 @@
   .sync[data-state="saving"]::before{background:var(--s-yellow)}
   .sync[data-state="error"]{color:var(--s-red)}
   .sync[data-state="error"]::before{background:var(--s-red)}
-  .tb-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+  .tb-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px;align-items:center}
   button{font-family:inherit}
   .btn{appearance:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:13px;font-weight:550;
     padding:7px 13px;border-radius:8px;cursor:pointer;line-height:1;display:inline-flex;align-items:center;gap:7px}
-  .btn:hover{border-color:#aab4c4;background:var(--surface-2)}
+  .btn:hover{border-color:#9fb8ac;background:var(--surface-2)}
   .btn.primary{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
-  .btn.primary:hover{background:#223c64}
+  .btn.primary:hover{background:#033129}
   .btn:focus-visible,.bar:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .legend{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto;align-items:center}
   .legend .lbl{font-size:11px;color:var(--ink-faint);margin-right:2px}
@@ -93,7 +101,7 @@
   .lane-label .nm-row{display:flex;align-items:center;gap:8px;min-width:0}
   .lane-label .nm-row .nm{flex:1 1 auto;min-width:0}
   .lane-pipe{flex:0 0 auto;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line-strong);background:var(--surface);border-radius:7px;padding:4px 6px;color:var(--ink-soft);cursor:pointer;line-height:0}
-  .lane-pipe:hover{border-color:#aab4c4;color:var(--ink)}
+  .lane-pipe:hover{border-color:#9fb8ac;color:var(--ink)}
   .lane-pipe:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .lane-pipe .lp-play{display:inline-flex;color:var(--s-green)}
   .lane-pipe .lp-count{font-size:10.5px;font-family:var(--mono);font-weight:600;line-height:1}
@@ -122,8 +130,8 @@
   .bar .grip{position:absolute;top:0;bottom:0;width:9px;cursor:ew-resize;color:var(--bar-accent)}
   .bar .grip.l{left:0}.bar .grip.r{right:0}
   .bar:hover .grip::after{content:"";position:absolute;top:50%;transform:translateY(-50%);left:3px;width:3px;height:40%;border-radius:2px;background:currentColor;opacity:.4}
-  .lane.droptarget .track{background-color:#eef4ff}
-  .ghost{position:absolute;pointer-events:none;border-radius:7px;border:1.5px dashed var(--primary);background:rgba(43,74,122,.10);z-index:19}
+  .lane.droptarget .track{background-color:#ecf5ef}
+  .ghost{position:absolute;pointer-events:none;border-radius:7px;border:1.5px dashed var(--primary);background:rgba(2,66,58,.10);z-index:19}
   .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-faint);font-size:13px;padding:20px;pointer-events:none}
 
   .scrim{position:fixed;inset:0;background:rgba(20,26,38,.42);display:flex;align-items:center;justify-content:center;z-index:100;padding:18px}
@@ -151,7 +159,7 @@
   .tr-count{font-size:11px;color:var(--ink-faint);font-family:var(--mono)}
   .ord{display:flex;flex-direction:column;gap:2px}
   .ordb{width:22px;height:15px;line-height:1;border:1px solid var(--line-strong);background:var(--surface,#fff);border-radius:4px;font-size:9px;color:var(--ink-soft);cursor:pointer;padding:0}
-  .ordb:hover:not(:disabled){border-color:#aab4c4}
+  .ordb:hover:not(:disabled){border-color:#9fb8ac}
   .ordb:disabled{opacity:.35;cursor:not-allowed}
   .field.hidden{display:none}
   .chk{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink);font-weight:500;cursor:pointer;padding-top:6px}
@@ -208,7 +216,7 @@
   .userbadge .ub-name{font-weight:550;color:var(--ink)}
   .userbadge .ub-out{appearance:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-soft);
     font-size:11.5px;padding:4px 9px;border-radius:7px;cursor:pointer;font-family:inherit}
-  .userbadge .ub-out:hover{border-color:#aab4c4;color:var(--ink)}
+  .userbadge .ub-out:hover{border-color:#9fb8ac;color:var(--ink)}
   .btn,.bar,.wday,.ordb,.task-item,.rm,.ub-out,.chip{-webkit-tap-highlight-color:transparent}
   @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 
@@ -248,6 +256,10 @@
 <div class="app">
   <div class="toolbar">
     <div class="tb-top">
+      <svg class="tb-logo" viewBox="0 0 500 176.51" role="img" aria-label="HBE" xmlns="http://www.w3.org/2000/svg">
+        <path class="lg-word" d="M267.91,43.84v103.22c-1.43.39-3.63.78-6.61,1.17-2.98.39-6.03.58-9.14.58-6.74,0-11.47-1.2-14.19-3.6-2.72-2.4-4.08-6.58-4.08-12.54v-30.91h-37.32v45.29c-1.43.39-3.63.78-6.61,1.17-2.98.39-6.03.58-9.14.58-6.74,0-11.47-1.2-14.19-3.6-2.72-2.4-4.08-6.58-4.08-12.54V29.06c1.56-.26,3.85-.61,6.9-1.07,3.04-.45,5.99-.68,8.84-.68,6.48,0,11.14,1.1,14,3.3,2.85,2.21,4.28,6.48,4.28,12.83v31.49h37.32V29.06c1.56-.26,3.85-.61,6.9-1.07,3.04-.45,5.99-.68,8.84-.68,6.48,0,11.14,1.17,14,3.5,2.85,2.33,4.28,6.68,4.28,13.02ZM388.52,95.35c3.82,4.67,5.73,10.43,5.73,17.3,0,12.7-4.8,22.16-14.38,28.38-9.59,6.22-23.26,9.33-41.02,9.33-2.98,0-6.54-.13-10.69-.39-4.15-.26-8.36-.75-12.63-1.46-4.28-.71-8.16-1.72-11.66-3.01-7.13-2.72-10.69-7.45-10.69-14.19V40.53c0-2.72.78-4.83,2.33-6.32,1.56-1.49,3.56-2.69,6.03-3.6,4.4-1.56,9.94-2.69,16.62-3.4,6.67-.71,13.44-1.07,20.31-1.07,16.46,0,29.19,2.82,38.2,8.46,9.01,5.64,13.51,14.22,13.51,25.76,0,6.48-1.98,11.89-5.93,16.23-3.11,3.41-7.25,6.13-12.4,8.19,7.35,2.46,12.91,5.98,16.68,10.57ZM326.22,52.59v22.94h14.19c5.57,0,9.62-1.04,12.15-3.11,2.53-2.07,3.79-5.12,3.79-9.14,0-3.5-1.46-6.28-4.37-8.36-2.92-2.07-7.29-3.11-13.12-3.11-1.94,0-4.18.07-6.71.19-2.53.13-4.5.32-5.93.58ZM359.46,111.1c0-4.28-1.46-7.32-4.37-9.14-2.92-1.81-7.23-2.72-12.93-2.72h-15.94v23.72c1.81.52,4.18.87,7.1,1.07,2.92.19,5.6.29,8.07.29,5.18,0,9.49-1.07,12.93-3.21,3.43-2.14,5.15-5.47,5.15-10.01ZM498.93,126.65c-.71-2.33-1.52-4.21-2.43-5.64h-49.96v-20.41h35.57c3.63,0,6.48-1.07,8.55-3.21,2.07-2.14,3.11-5.6,3.11-10.4,0-2.72-.36-5.18-1.07-7.39-.71-2.2-1.52-4.02-2.43-5.44h-43.74v-18.08h41.02c3.63,0,6.48-1.1,8.55-3.3,2.07-2.2,3.11-5.7,3.11-10.5,0-2.72-.36-5.18-1.07-7.39-.71-2.2-1.52-4.02-2.43-5.44h-64.15c-5.57,0-9.98,1.62-13.22,4.86-3.24,3.24-4.86,7.65-4.86,13.22v82.23c0,5.57,1.62,9.98,4.86,13.22,3.24,3.24,7.65,4.86,13.22,4.86h56.76c3.63,0,6.48-1.07,8.55-3.21,2.07-2.14,3.11-5.6,3.11-10.4,0-2.72-.36-5.25-1.07-7.58Z"/>
+        <path class="lg-sym" d="M106.44,19.62h-7.31C94.64,8.14,83.49,0,70.42,0h-34.41v19.62H0v106.44c0,17.03,13.81,30.84,30.84,30.84h7.31c4.49,11.48,15.63,19.62,28.7,19.62h34.41v-19.62h36.01V50.46c0-17.03-13.81-30.84-30.84-30.84ZM21.94,126.05V41.55h14.08v93.4h-5.17c-4.91,0-8.9-3.99-8.9-8.9ZM79.33,154.57h-12.47c-4.91,0-8.9-3.99-8.9-8.9V21.94h12.47c4.91,0,8.9,3.99,8.9,8.9v123.73ZM115.34,134.96h-14.08V41.55h5.17c4.91,0,8.9,3.99,8.9,8.9v84.5Z"/>
+      </svg>
       <h1 class="tb-title">Ressourcenplanung</h1>
       <span class="tb-spacer"></span>
       <span class="userbadge" id="userBadge" hidden></span>
@@ -695,7 +707,10 @@ function openEditor(task,prefill,returnTo){
   if(!task && state.people.length===0){ toast("Bitte zuerst über „Team bearbeiten“ eine Person anlegen."); return; }
   const editing=!!task;
   const defStart=Math.max(todayInfo().today, MIN_START);
-  const t=editing?{...task}:{id:null,title:"",personId:(prefill?.personId)||state.people[0].id,start:(prefill?.pipeline?null:((prefill?.start)??defStart)),days:(prefill?.days)||1,note:"",load:100,repeat:"none",repeatUntil:null,customer:"",contact:"",order:"",status:"active"};
+  const src=prefill?.copyOf;                           // Vorlage beim Kopieren einer Aufgabe
+  const t=editing?{...task}
+    :src?{...src,id:null,title:(src.title||"")+" (Kopie)"}
+    :{id:null,title:"",personId:(prefill?.personId)||state.people[0].id,start:(prefill?.pipeline?null:((prefill?.start)??defStart)),days:(prefill?.days)||1,note:"",load:100,repeat:"none",repeatUntil:null,customer:"",contact:"",order:"",status:"active"};
   if(editing){ t.load=(t.load==null?100:t.load); t.repeat=(t.repeat==="weekly"?"weekly":"none"); }
   const isPipe=t.start==null;                          // Pipeline = noch kein Datum
   const isHold=t.status==="onhold";                    // On-hold (v. a. für die Pipeline relevant)
@@ -706,7 +721,7 @@ function openEditor(task,prefill,returnTo){
   const root=document.getElementById("modalRoot");
   root.innerHTML=`
    <div class="scrim" id="scrim"><div class="modal" role="dialog" aria-modal="true" aria-label="Aufgabe">
-      <h2>${editing?"Aufgabe bearbeiten":"Neue Aufgabe"}</h2>
+      <h2>${editing?"Aufgabe bearbeiten":src?"Aufgabe kopieren":"Neue Aufgabe"}</h2>
       <div class="mbody">
         <div class="field"><label for="f-title">Thema</label><input id="f-title" type="text" placeholder="z. B. S/4HANA Migration Kunde A" value="${esc(t.title)}" /></div>
         <div class="field"><label for="f-person">Person</label><select id="f-person">${opts}</select></div>
@@ -734,7 +749,7 @@ function openEditor(task,prefill,returnTo){
         <div class="field"><label for="f-order">Bestellung</label><input id="f-order" type="text" maxlength="40" placeholder="optional" value="${esc(t.order||"")}" /></div>
         <div class="field"><label for="f-note">Notiz (optional)</label><textarea id="f-note" placeholder="Kontext, Ticket-Nr., Kunde …">${esc(t.note||"")}</textarea></div>
       </div>
-      <div class="mfoot">${editing?`<button class="link-danger" id="f-del">Löschen</button>`:""}<span class="sp"></span>
+      <div class="mfoot">${editing?`<button class="link-danger" id="f-del">Löschen</button><button class="btn" id="f-copy" title="Aufgabe als Kopie anlegen">Kopieren</button>`:""}<span class="sp"></span>
         <button class="btn" id="f-cancel">Abbrechen</button><button class="btn primary" id="f-save">${editing?"Speichern":"Anlegen"}</button></div>
    </div></div>`;
   const onEsc=e=>{ if(e.key==="Escape") close(); };
@@ -756,6 +771,10 @@ function openEditor(task,prefill,returnTo){
   document.getElementById("f-rep").addEventListener("change",syncPipe);
   syncPipe();                                         // Anfangszustand (z. B. On-hold-Aufgabe: Datum gesperrt)
   if(editing) document.getElementById("f-del").onclick=()=>{removeTask(task.id);close();};
+  if(editing) document.getElementById("f-copy").onclick=()=>{   // Kopie mit den gespeicherten Werten im Editor öffnen
+    document.removeEventListener("keydown",onEsc); root.innerHTML="";
+    openEditor(null,{copyOf:task},returnTo);
+  };
   document.getElementById("f-save").onclick=()=>{
     const title=document.getElementById("f-title").value.trim()||"(ohne Titel)";
     const personId=document.getElementById("f-person").value;
@@ -970,7 +989,6 @@ document.getElementById("board").addEventListener("wheel",e=>{ if(e.shiftKey)ret
 document.getElementById("btnNew").onclick=()=>openEditor(null);
 document.getElementById("btnToday").onclick=jumpToday;
 document.getElementById("btnTeam").onclick=openTeam;
-window.addEventListener("resize",()=>render());
 
 /* ---------- Teams-Integration ---------- */
 let IN_TEAMS=false, currentUser=null;
@@ -1074,3 +1092,4 @@ async function startApp(session){
   else{ showLogin(); }
 })();
 </script>
+</html>
